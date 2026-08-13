@@ -6,7 +6,9 @@ from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
-from core.db import Base
+import jobs.models  # noqa: F401
+import templates.models  # noqa: F401
+from core.db import BaseModel
 from core.settings import settings
 
 # this is the Alembic Config object, which provides
@@ -21,7 +23,7 @@ if config.config_file_name is not None:
 
 # add your model's MetaData object here
 # for 'autogenerate' support
-target_metadata = Base.metadata
+target_metadata = BaseModel.metadata
 
 # other values from the config, defined by the needs of env.py,
 # can be acquired:
