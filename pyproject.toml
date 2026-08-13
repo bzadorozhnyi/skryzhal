@@ -7,11 +7,35 @@ authors = [
     { name = "bzadorozhnyi", email = "bohzador@gmail.com" }
 ]
 requires-python = ">=3.14"
-dependencies = []
+dependencies = [
+    "alembic>=1.19.1",
+    "asyncpg>=0.31.0",
+    "fastapi[standard]>=0.141.1",
+    "loguru>=0.7.3",
+    "pydantic-settings>=2.15.0",
+    "sqlalchemy[asyncio]>=2.0.52",
+]
 
-[project.scripts]
-skryzhal = "skryzhal:main"
+[dependency-groups]
+dev = [
+    "pre-commit>=4.6.2",
+    "ruff>=0.16.2",
+    "ty>=0.0.71",
+]
 
-[build-system]
-requires = ["uv_build>=0.12.3,<0.13.0"]
-build-backend = "uv_build"
+[tool.ruff]
+target-version = "py314"
+
+[tool.ruff.lint]
+preview = true
+select = ["E", "F", "I", "UP", "B", "C4", "SIM", "C901", "PLR1702"]
+ignore = ["E731"]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
+[tool.ruff.lint.pylint]
+max-nested-blocks = 4
+
+[tool.ruff.format]
+quote-style = "double"
