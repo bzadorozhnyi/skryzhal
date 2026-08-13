@@ -14,8 +14,17 @@ class DBSettings(BaseModel):
         return f"postgresql+asyncpg://{self.USER}:{self.PASS}@{self.HOST}:{self.PORT}/{self.NAME}"
 
 
+class S3StorageSettings(BaseModel):
+    ENDPOINT_URL: str
+    BUCKET: str
+    ACCESS_KEY: str
+    SECRET_KEY: str
+    REGION: str = "us-east-1"
+
+
 class Settings(BaseSettings):
     DB: DBSettings
+    S3_STORAGE: S3StorageSettings
 
     model_config = SettingsConfigDict(
         env_file=(".env", "../.env"),
