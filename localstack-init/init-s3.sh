@@ -14,3 +14,16 @@ awslocal s3api put-bucket-cors --bucket local-bucket --cors-configuration '{
     }
   ]
 }'
+
+awslocal s3api put-bucket-lifecycle-configuration --bucket local-bucket --lifecycle-configuration '{
+  "Rules": [
+    {
+      "ID": "expire-staging",
+      "Filter": {"Prefix": "staging/"},
+      "Status": "Enabled",
+      "Expiration": {"Days": 1}
+    }
+  ]
+}'
+
+echo "Lifecycle rule 'expire-staging' applied"
