@@ -20,6 +20,8 @@ class S3StorageSettings(BaseModel):
     ACCESS_KEY: str
     SECRET_KEY: str
     REGION: str = "us-east-1"
+    UPLOAD_URL_EXPIRES_IN: int = 900
+    GET_URL_EXPIRES_IN: int = 3600
 
 
 class Settings(BaseSettings):

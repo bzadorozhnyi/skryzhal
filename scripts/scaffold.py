@@ -9,13 +9,15 @@ SRC_DIR = Path(__file__).resolve().parent.parent / "src"
 SUBMODULE_STRUCTURE = [
     Path("."),
     Path("models"),
-    Path("schemas"),
-    Path("schemas/request"),
-    Path("schemas/response"),
     Path("repositories"),
     Path("services"),
     Path("use_cases"),
-    Path("routes"),
+    Path("endpoints"),
+    Path("endpoints/v1"),
+    Path("endpoints/v1/routes"),
+    Path("endpoints/v1/schemas"),
+    Path("endpoints/v1/schemas/request"),
+    Path("endpoints/v1/schemas/response"),
 ]
 
 
