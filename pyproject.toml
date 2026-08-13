@@ -21,6 +21,7 @@ dev = [
     "pre-commit>=4.6.2",
     "ruff>=0.16.2",
     "ty>=0.0.71",
+    "typer>=0.27.1",
 ]
 
 [tool.ruff]
