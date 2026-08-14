@@ -4,8 +4,8 @@ from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.db import SessionDep
+from templates.dto.template import TemplateDTO
 from templates.endpoints.v1.schemas.request.template import CreateTemplateIn
-from templates.endpoints.v1.schemas.response.template import TemplateOut
 from templates.models.template import Template
 from templates.repositories.storage import (
     TemplateStorageRepository,
@@ -26,7 +26,7 @@ class CreateTemplateUseCase:
         self.repository = repository
         self.storage = storage
 
-    async def execute(self, *, data: CreateTemplateIn) -> TemplateOut:
+    async def execute(self, *, data: CreateTemplateIn) -> TemplateDTO:
         s3_key = await self.storage.promote(slug=data.slug, checksum=data.checksum)
 
         await self.repository.lock_slug(slug=data.slug)
@@ -43,7 +43,7 @@ class CreateTemplateUseCase:
         await self.session.commit()
 
         get_url = await self.storage.generate_get_url(key=template.s3_key)
-        return TemplateOut(
+        return TemplateDTO(
             id=template.id,
             slug=template.slug,
             name=template.name,

@@ -3,8 +3,8 @@ from typing import Annotated
 from fastapi import Depends
 
 from core.settings import settings
+from templates.dto.upload_url import UploadUrlDTO
 from templates.endpoints.v1.schemas.request.upload_url import UploadUrlIn
-from templates.endpoints.v1.schemas.response.upload_url import UploadUrlOut
 from templates.repositories.storage import (
     TemplateStorageRepository,
     TemplateStorageRepositoryDep,
@@ -15,11 +15,11 @@ class CreateUploadUrlUseCase:
     def __init__(self, *, storage: TemplateStorageRepository):
         self.storage = storage
 
-    async def execute(self, *, data: UploadUrlIn) -> UploadUrlOut:
+    async def execute(self, *, data: UploadUrlIn) -> UploadUrlDTO:
         upload_url = await self.storage.generate_upload_url(
             slug=data.slug, checksum=data.checksum
         )
-        return UploadUrlOut(
+        return UploadUrlDTO(
             upload_url=upload_url, expires_in=settings.S3_STORAGE.UPLOAD_URL_EXPIRES_IN
         )
 
