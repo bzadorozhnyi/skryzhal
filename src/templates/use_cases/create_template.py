@@ -17,6 +17,7 @@ from templates.repositories.template import TemplateRepository, TemplateReposito
 class CreateTemplateUseCase:
     def __init__(
         self,
+        *,
         session: AsyncSession,
         repository: TemplateRepository,
         storage: TemplateStorageRepository,
@@ -25,11 +26,11 @@ class CreateTemplateUseCase:
         self.repository = repository
         self.storage = storage
 
-    async def execute(self, data: CreateTemplateIn) -> TemplateOut:
-        s3_key = await self.storage.promote(data.slug, data.checksum)
+    async def execute(self, *, data: CreateTemplateIn) -> TemplateOut:
+        s3_key = await self.storage.promote(slug=data.slug, checksum=data.checksum)
 
-        await self.repository.lock_slug(data.slug)
-        max_version = await self.repository.get_max_version(data.slug)
+        await self.repository.lock_slug(slug=data.slug)
+        max_version = await self.repository.get_max_version(slug=data.slug)
 
         template = Template(
             slug=data.slug,
@@ -38,10 +39,10 @@ class CreateTemplateUseCase:
             s3_key=s3_key,
             checksum=data.checksum,
         )
-        await self.repository.create(template)
+        await self.repository.create(template=template)
         await self.session.commit()
 
-        get_url = await self.storage.generate_get_url(template.s3_key)
+        get_url = await self.storage.generate_get_url(key=template.s3_key)
         return TemplateOut(
             id=template.id,
             slug=template.slug,
@@ -57,7 +58,9 @@ def get_create_template_use_case(
     repository: TemplateRepositoryDep,
     storage: TemplateStorageRepositoryDep,
 ) -> CreateTemplateUseCase:
-    return CreateTemplateUseCase(session, repository, storage)
+    return CreateTemplateUseCase(
+        session=session, repository=repository, storage=storage
+    )
 
 
 CreateTemplateUseCaseDep = Annotated[
