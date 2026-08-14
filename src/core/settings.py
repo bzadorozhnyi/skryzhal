@@ -24,9 +24,19 @@ class S3StorageSettings(BaseModel):
     GET_URL_EXPIRES_IN: int = 3600
 
 
+class SQSSettings(BaseModel):
+    ENDPOINT_URL: str
+    QUEUE_NAME: str
+    DLQ_NAME: str
+    ACCESS_KEY: str
+    SECRET_KEY: str
+    REGION: str = "us-east-1"
+
+
 class Settings(BaseSettings):
     DB: DBSettings
     S3_STORAGE: S3StorageSettings
+    SQS: SQSSettings
 
     model_config = SettingsConfigDict(
         env_file=(".env", "../.env"),
