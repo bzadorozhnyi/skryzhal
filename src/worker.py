@@ -24,6 +24,11 @@ async def _extend_visibility_periodically(
         await job_queue.extend_visibility(receipt_handle=receipt_handle)
 
 
+def _compute_backoff(*, attempt_count: int) -> int:
+    delay = settings.SQS.RETRY_BACKOFF_BASE_SECONDS * (2 ** max(attempt_count - 1, 0))
+    return min(delay, settings.SQS.RETRY_BACKOFF_MAX_SECONDS)
+
+
 async def process_message(
     *, message: dict, job_queue: JobQueueRepository, s3_client
 ) -> None:
@@ -37,9 +42,10 @@ async def process_message(
     )
     try:
         async with async_session() as session:
+            job_repository = JobRepository(session=session)
             render_service = RenderService(
                 session=session,
-                job_repository=JobRepository(session=session),
+                job_repository=job_repository,
                 job_storage=JobStorageRepository(s3_client=s3_client),
                 template_repository=TemplateRepository(session=session),
                 template_storage=TemplateStorageRepository(s3_client=s3_client),
@@ -47,7 +53,17 @@ async def process_message(
             try:
                 await render_service.render(job_id=job_id)
             except Exception:
-                logger.exception(f"Failed to render job {job_id}")
+                logger.exception(f"Transient failure rendering job {job_id}")
+                job = await job_repository.get_by_id(job_id=job_id)
+                attempt_count = job.attempt_count if job else 1
+                backoff = _compute_backoff(attempt_count=attempt_count)
+                await job_queue.extend_visibility(
+                    receipt_handle=receipt_handle, visibility_timeout=backoff
+                )
+                logger.info(
+                    f"Job {job_id} will be retried in {backoff}s "
+                    f"(attempt {attempt_count})"
+                )
                 return
     finally:
         heartbeat.cancel()

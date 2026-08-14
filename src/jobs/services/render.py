@@ -10,6 +10,7 @@ from core.typst import TypstCompilationError, compile_typst
 from jobs.models.render_job import JobStatus
 from jobs.repositories.job import JobRepository, JobRepositoryDep
 from jobs.repositories.storage import JobStorageRepository, JobStorageRepositoryDep
+from jobs.services.job_transitions import transition
 from templates.repositories.storage import (
     TemplateStorageRepository,
     TemplateStorageRepositoryDep,
@@ -39,15 +40,17 @@ class RenderService:
             logger.info(f"Job {job_id} not found or already claimed, skipping")
             return
 
-        template = await self.template_repository.get_by_id(template_id=job.template_id)
-        if template is None:
-            job.status = JobStatus.FAILED
-            job.error_message = f"Template {job.template_id} not found"
-            job.attempt_count += 1
-            await self.session.commit()
-            return
-
         try:
+            template = await self.template_repository.get_by_id(
+                template_id=job.template_id
+            )
+            if template is None:
+                job.error_message = f"Template {job.template_id} not found"
+                job.attempt_count += 1
+                transition(job=job, status=JobStatus.FAILED)
+                await self.session.commit()
+                return
+
             template_bytes = await self.template_storage.download(key=template.s3_key)
             pdf_bytes = await compile_typst(
                 template=template_bytes, input_data=job.input_data
@@ -55,13 +58,21 @@ class RenderService:
             job.result_s3_key = await self.job_storage.upload_result(
                 job_id=job.id, content=pdf_bytes
             )
-            job.status = JobStatus.COMPLETED
+            transition(job=job, status=JobStatus.COMPLETED)
+            await self.session.commit()
         except TypstCompilationError as exc:
-            job.status = JobStatus.FAILED
             job.error_message = exc.stderr
             job.attempt_count += 1
-
-        await self.session.commit()
+            transition(job=job, status=JobStatus.FAILED)
+            await self.session.commit()
+        except Exception:
+            # Unexpected/transient failure (S3 outage, DB hiccup, etc.) — revert
+            # to PENDING so SQS redelivery + claim_for_processing can retry it,
+            # instead of leaving the job stuck at PROCESSING forever.
+            job.attempt_count += 1
+            transition(job=job, status=JobStatus.PENDING)
+            await self.session.commit()
+            raise
 
 
 def get_render_service(
