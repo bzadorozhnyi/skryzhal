@@ -1,3 +1,21 @@
+x-app-env: &app-env
+  DB__NAME: skryzhal_db
+  DB__USER: postgres
+  DB__PASS: password
+  DB__HOST: db
+  DB__PORT: 5432
+  S3_STORAGE__ENDPOINT_URL: http://localstack:4566
+  S3_STORAGE__BUCKET: local-bucket
+  S3_STORAGE__ACCESS_KEY: test
+  S3_STORAGE__SECRET_KEY: test
+  S3_STORAGE__REGION: us-east-1
+  SQS__ENDPOINT_URL: http://localstack:4566
+  SQS__QUEUE_NAME: skryzhal-render-queue
+  SQS__DLQ_NAME: skryzhal-render-dlq
+  SQS__ACCESS_KEY: test
+  SQS__SECRET_KEY: test
+  SQS__REGION: us-east-1
+
 services:
   db:
     image: postgres:18
@@ -32,6 +50,29 @@ services:
       interval: 5s
       timeout: 5s
       retries: 3
+
+  api:
+    build: .
+    environment:
+      <<: *app-env
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      localstack:
+        condition: service_healthy
+
+  worker:
+    build: .
+    command: python worker.py
+    environment:
+      <<: *app-env
+    depends_on:
+      db:
+        condition: service_healthy
+      localstack:
+        condition: service_healthy
 
 volumes:
   postgres_data:

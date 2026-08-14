@@ -3,7 +3,7 @@ from typing import Annotated
 
 import aioboto3
 from botocore.config import Config
-from fastapi import Depends
+from fastapi import Depends, Request
 
 from core.settings import settings
 
@@ -18,14 +18,21 @@ async def s3_client_context():
         aws_access_key_id=settings.S3_STORAGE.ACCESS_KEY,
         aws_secret_access_key=settings.S3_STORAGE.SECRET_KEY,
         region_name=settings.S3_STORAGE.REGION,
-        config=Config(signature_version="s3v4"),
+        config=Config(
+            signature_version="s3v4",
+            connect_timeout=settings.S3_STORAGE.CONNECT_TIMEOUT_SECONDS,
+            read_timeout=settings.S3_STORAGE.READ_TIMEOUT_SECONDS,
+            retries={
+                "max_attempts": settings.S3_STORAGE.MAX_ATTEMPTS,
+                "mode": "standard",
+            },
+        ),
     ) as client:
         yield client
 
 
-async def get_s3_client():
-    async with s3_client_context() as client:
-        yield client
+def get_s3_client(request: Request):
+    return request.app.state.s3_client
 
 
 S3ClientDep = Annotated[..., Depends(get_s3_client)]  # ty: ignore[invalid-type-form]
