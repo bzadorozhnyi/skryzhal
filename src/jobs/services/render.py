@@ -5,7 +5,7 @@ from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.db import SessionDep
-from core.exceptions import NotFoundException
+from core.logging import logger
 from core.typst import TypstCompilationError, compile_typst
 from jobs.models.render_job import JobStatus
 from jobs.repositories.job import JobRepository, JobRepositoryDep
@@ -34,9 +34,10 @@ class RenderService:
         self.template_storage = template_storage
 
     async def render(self, *, job_id: uuid.UUID) -> None:
-        job = await self.job_repository.get_by_id(job_id=job_id)
+        job = await self.job_repository.claim_for_processing(job_id=job_id)
         if job is None:
-            raise NotFoundException(f"Job {job_id} not found")
+            logger.info(f"Job {job_id} not found or already claimed, skipping")
+            return
 
         template = await self.template_repository.get_by_id(template_id=job.template_id)
         if template is None:

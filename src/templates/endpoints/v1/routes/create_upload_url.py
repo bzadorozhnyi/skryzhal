@@ -12,4 +12,5 @@ from templates.use_cases.create_upload_url import CreateUploadUrlUseCaseDep
 async def create_upload_url(
     data: UploadUrlIn, use_case: CreateUploadUrlUseCaseDep
 ) -> UploadUrlOut:
-    return await use_case.execute(data=data)
+    dto = await use_case.execute(data=data)
+    return UploadUrlOut.from_dto(dto)
