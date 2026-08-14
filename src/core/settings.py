@@ -22,6 +22,9 @@ class S3StorageSettings(BaseModel):
     REGION: str = "us-east-1"
     UPLOAD_URL_EXPIRES_IN: int = 900
     GET_URL_EXPIRES_IN: int = 3600
+    CONNECT_TIMEOUT_SECONDS: int = 5
+    READ_TIMEOUT_SECONDS: int = 10
+    MAX_ATTEMPTS: int = 3
 
 
 class SQSSettings(BaseModel):
@@ -33,6 +36,11 @@ class SQSSettings(BaseModel):
     REGION: str = "us-east-1"
     POLL_WAIT_TIME_SECONDS: int = 20
     POLL_MAX_MESSAGES: int = 5
+    CONNECT_TIMEOUT_SECONDS: int = 5
+    # Must stay above POLL_WAIT_TIME_SECONDS: SQS long-polling legitimately
+    # holds the HTTP response open for up to that long before replying.
+    READ_TIMEOUT_SECONDS: int = 25
+    MAX_ATTEMPTS: int = 3
 
 
 class Settings(BaseSettings):
