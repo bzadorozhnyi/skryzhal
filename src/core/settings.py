@@ -36,6 +36,10 @@ class SQSSettings(BaseModel):
     REGION: str = "us-east-1"
     POLL_WAIT_TIME_SECONDS: int = 20
     POLL_MAX_MESSAGES: int = 5
+    VISIBILITY_TIMEOUT_SECONDS: int = 30
+    # Must stay below VISIBILITY_TIMEOUT_SECONDS, with a safety buffer, so the
+    # heartbeat always renews before the current timeout window expires.
+    VISIBILITY_EXTENSION_INTERVAL_SECONDS: int = 20
     CONNECT_TIMEOUT_SECONDS: int = 5
     # Must stay above POLL_WAIT_TIME_SECONDS: SQS long-polling legitimately
     # holds the HTTP response open for up to that long before replying.
