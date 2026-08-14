@@ -31,6 +31,8 @@ class SQSSettings(BaseModel):
     ACCESS_KEY: str
     SECRET_KEY: str
     REGION: str = "us-east-1"
+    POLL_WAIT_TIME_SECONDS: int = 20
+    POLL_MAX_MESSAGES: int = 5
 
 
 class Settings(BaseSettings):
