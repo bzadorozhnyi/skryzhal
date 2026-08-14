@@ -43,6 +43,19 @@ class JobQueueRepository:
             QueueUrl=queue_url, ReceiptHandle=receipt_handle
         )
 
+    async def extend_visibility(
+        self,
+        *,
+        receipt_handle: str,
+        visibility_timeout: int = settings.SQS.VISIBILITY_TIMEOUT_SECONDS,
+    ) -> None:
+        queue_url = await self._queue_url(queue_name=settings.SQS.QUEUE_NAME)
+        await self.sqs_client.change_message_visibility(
+            QueueUrl=queue_url,
+            ReceiptHandle=receipt_handle,
+            VisibilityTimeout=visibility_timeout,
+        )
+
 
 def get_job_queue_repository(sqs_client: SQSClientDep) -> JobQueueRepository:
     return JobQueueRepository(sqs_client=sqs_client)

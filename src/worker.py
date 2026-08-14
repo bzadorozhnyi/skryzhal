@@ -1,10 +1,12 @@
 import asyncio
+import contextlib
 import json
 import uuid
 
 from core.db import async_session
 from core.logging import logger
 from core.s3 import s3_client_context
+from core.settings import settings
 from core.sqs import sqs_client_context
 from jobs.repositories.job import JobRepository
 from jobs.repositories.queue import JobQueueRepository
@@ -14,26 +16,45 @@ from templates.repositories.storage import TemplateStorageRepository
 from templates.repositories.template import TemplateRepository
 
 
+async def _extend_visibility_periodically(
+    *, job_queue: JobQueueRepository, receipt_handle: str
+) -> None:
+    while True:
+        await asyncio.sleep(settings.SQS.VISIBILITY_EXTENSION_INTERVAL_SECONDS)
+        await job_queue.extend_visibility(receipt_handle=receipt_handle)
+
+
 async def process_message(
     *, message: dict, job_queue: JobQueueRepository, s3_client
 ) -> None:
     job_id = uuid.UUID(json.loads(message["Body"])["job_id"])
+    receipt_handle = message["ReceiptHandle"]
 
-    async with async_session() as session:
-        render_service = RenderService(
-            session=session,
-            job_repository=JobRepository(session=session),
-            job_storage=JobStorageRepository(s3_client=s3_client),
-            template_repository=TemplateRepository(session=session),
-            template_storage=TemplateStorageRepository(s3_client=s3_client),
+    heartbeat = asyncio.create_task(
+        _extend_visibility_periodically(
+            job_queue=job_queue, receipt_handle=receipt_handle
         )
-        try:
-            await render_service.render(job_id=job_id)
-        except Exception:
-            logger.exception(f"Failed to render job {job_id}")
-            return
+    )
+    try:
+        async with async_session() as session:
+            render_service = RenderService(
+                session=session,
+                job_repository=JobRepository(session=session),
+                job_storage=JobStorageRepository(s3_client=s3_client),
+                template_repository=TemplateRepository(session=session),
+                template_storage=TemplateStorageRepository(s3_client=s3_client),
+            )
+            try:
+                await render_service.render(job_id=job_id)
+            except Exception:
+                logger.exception(f"Failed to render job {job_id}")
+                return
+    finally:
+        heartbeat.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await heartbeat
 
-    await job_queue.delete(receipt_handle=message["ReceiptHandle"])
+    await job_queue.delete(receipt_handle=receipt_handle)
     logger.info(f"Rendered job {job_id}")
 
 
