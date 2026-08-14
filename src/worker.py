@@ -79,11 +79,23 @@ async def main() -> None:
         job_queue = JobQueueRepository(sqs_client=sqs_client)
         logger.info("Worker started, polling SQS...")
         while True:
-            messages = await job_queue.receive()
+            try:
+                messages = await job_queue.receive()
+            except Exception:
+                logger.exception("Failed to poll SQS, will retry")
+                await asyncio.sleep(settings.SQS.POLL_ERROR_BACKOFF_SECONDS)
+                continue
+
             for message in messages:
-                await process_message(
-                    message=message, job_queue=job_queue, s3_client=s3_client
-                )
+                try:
+                    await process_message(
+                        message=message, job_queue=job_queue, s3_client=s3_client
+                    )
+                except Exception:
+                    logger.exception(
+                        f"Unexpected failure processing message "
+                        f"{message.get('MessageId')}, skipping"
+                    )
 
 
 if __name__ == "__main__":

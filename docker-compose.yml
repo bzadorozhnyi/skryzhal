@@ -74,6 +74,17 @@ services:
       localstack:
         condition: service_healthy
 
+  relay:
+    build: .
+    command: python relay.py
+    environment:
+      <<: *app-env
+    depends_on:
+      db:
+        condition: service_healthy
+      localstack:
+        condition: service_healthy
+
 volumes:
   postgres_data:
   localstack_data:

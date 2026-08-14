@@ -11,7 +11,8 @@ from jobs.dto.job import CreateJobResultDTO, JobDTO
 from jobs.endpoints.v1.schemas.request.job import CreateJobIn
 from jobs.models.render_job import JobStatus, RenderJob
 from jobs.repositories.job import JobRepository, JobRepositoryDep
-from jobs.repositories.queue import JobQueueRepository, JobQueueRepositoryDep
+from outbox.models.outbox_event import OutboxEvent, OutboxEventType
+from outbox.repositories.outbox import OutboxRepository, OutboxRepositoryDep
 from templates.repositories.template import TemplateRepository, TemplateRepositoryDep
 
 
@@ -21,12 +22,12 @@ class CreateJobUseCase:
         *,
         session: AsyncSession,
         job_repository: JobRepository,
-        job_queue: JobQueueRepository,
+        outbox_repository: OutboxRepository,
         template_repository: TemplateRepository,
     ):
         self.session = session
         self.job_repository = job_repository
-        self.job_queue = job_queue
+        self.outbox_repository = outbox_repository
         self.template_repository = template_repository
 
     async def execute(
@@ -52,6 +53,12 @@ class CreateJobUseCase:
             status=JobStatus.PENDING,
         )
         await self.job_repository.create(job=job)
+        await self.outbox_repository.create(
+            event=OutboxEvent(
+                event_type=OutboxEventType.JOB_CREATED,
+                payload={"job_id": str(job.id)},
+            )
+        )
         try:
             await self.session.commit()
         except IntegrityError:
@@ -64,7 +71,6 @@ class CreateJobUseCase:
             )
             return CreateJobResultDTO(job=reconciled, created=False)
 
-        await self.job_queue.publish(job_id=job.id)
         return CreateJobResultDTO(job=self._to_dto(job), created=True)
 
     @staticmethod
@@ -96,13 +102,13 @@ class CreateJobUseCase:
 def get_create_job_use_case(
     session: SessionDep,
     job_repository: JobRepositoryDep,
-    job_queue: JobQueueRepositoryDep,
+    outbox_repository: OutboxRepositoryDep,
     template_repository: TemplateRepositoryDep,
 ) -> CreateJobUseCase:
     return CreateJobUseCase(
         session=session,
         job_repository=job_repository,
-        job_queue=job_queue,
+        outbox_repository=outbox_repository,
         template_repository=template_repository,
     )
 

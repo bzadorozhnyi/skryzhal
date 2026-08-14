@@ -5,4 +5,5 @@ schema changes. Add a line here whenever a new submodule gains models.
 """
 
 import jobs.models  # noqa: F401
+import outbox.models  # noqa: F401
 import templates.models  # noqa: F401

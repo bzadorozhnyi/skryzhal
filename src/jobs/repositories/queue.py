@@ -16,12 +16,27 @@ class JobQueueRepository:
         response = await self.sqs_client.get_queue_url(QueueName=queue_name)
         return response["QueueUrl"]
 
-    async def publish(self, *, job_id: uuid.UUID) -> None:
+    async def publish_batch(
+        self, *, job_ids_by_key: dict[str, uuid.UUID]
+    ) -> dict[str, str]:
+        """Batch-publishes jobs to SQS. `job_ids_by_key` maps a caller-chosen
+        correlation key (unique within the batch, at most 10 entries per the
+        SQS send_message_batch limit) to the job_id to publish. Returns that
+        same key mapped to the resulting SQS MessageId, for entries that
+        succeeded — callers must check for missing keys to detect per-entry
+        failures.
+        """
         queue_url = await self._queue_url(queue_name=settings.SQS.QUEUE_NAME)
-        await self.sqs_client.send_message(
-            QueueUrl=queue_url,
-            MessageBody=json.dumps({"job_id": str(job_id)}),
+        entries = [
+            {"Id": key, "MessageBody": json.dumps({"job_id": str(job_id)})}
+            for key, job_id in job_ids_by_key.items()
+        ]
+        response = await self.sqs_client.send_message_batch(
+            QueueUrl=queue_url, Entries=entries
         )
+        return {
+            entry["Id"]: entry["MessageId"] for entry in response.get("Successful", [])
+        }
 
     async def receive(
         self,

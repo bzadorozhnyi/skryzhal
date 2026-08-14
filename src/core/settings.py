@@ -47,12 +47,22 @@ class SQSSettings(BaseModel):
     # holds the HTTP response open for up to that long before replying.
     READ_TIMEOUT_SECONDS: int = 25
     MAX_ATTEMPTS: int = 3
+    # How long the worker waits before retrying after a failed receive() call
+    # (e.g. SQS temporarily unreachable), so it doesn't busy-loop retrying.
+    POLL_ERROR_BACKOFF_SECONDS: int = 5
+
+
+class OutboxSettings(BaseModel):
+    # Capped at 10: the hard limit of SQS's send_message_batch per call.
+    BATCH_SIZE: int = 10
+    POLL_INTERVAL_SECONDS: int = 2
 
 
 class Settings(BaseSettings):
     DB: DBSettings
     S3_STORAGE: S3StorageSettings
     SQS: SQSSettings
+    OUTBOX: OutboxSettings = OutboxSettings()
 
     model_config = SettingsConfigDict(
         env_file=(".env", "../.env"),
