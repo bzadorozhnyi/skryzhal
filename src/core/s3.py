@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from typing import Annotated
 
 import aioboto3
@@ -9,7 +10,8 @@ from core.settings import settings
 session = aioboto3.Session()
 
 
-async def get_s3_client():
+@asynccontextmanager
+async def s3_client_context():
     async with session.client(
         "s3",
         endpoint_url=settings.S3_STORAGE.ENDPOINT_URL,
@@ -18,6 +20,11 @@ async def get_s3_client():
         region_name=settings.S3_STORAGE.REGION,
         config=Config(signature_version="s3v4"),
     ) as client:
+        yield client
+
+
+async def get_s3_client():
+    async with s3_client_context() as client:
         yield client
 
 
