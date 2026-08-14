@@ -40,6 +40,8 @@ class SQSSettings(BaseModel):
     # Must stay below VISIBILITY_TIMEOUT_SECONDS, with a safety buffer, so the
     # heartbeat always renews before the current timeout window expires.
     VISIBILITY_EXTENSION_INTERVAL_SECONDS: int = 20
+    RETRY_BACKOFF_BASE_SECONDS: int = 30
+    RETRY_BACKOFF_MAX_SECONDS: int = 300
     CONNECT_TIMEOUT_SECONDS: int = 5
     # Must stay above POLL_WAIT_TIME_SECONDS: SQS long-polling legitimately
     # holds the HTTP response open for up to that long before replying.
