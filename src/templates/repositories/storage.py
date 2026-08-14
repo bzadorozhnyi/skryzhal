@@ -10,19 +10,20 @@ from core.settings import settings
 
 
 class TemplateStorageRepository:
-    def __init__(self, s3_client):
+    def __init__(self, *, s3_client):
         self.s3_client = s3_client
 
     @staticmethod
-    def staging_key(slug: str, checksum: str) -> str:
+    def staging_key(*, slug: str, checksum: str) -> str:
         return f"staging/{slug}/{checksum}.typ"
 
     @staticmethod
-    def key(slug: str, checksum: str) -> str:
+    def key(*, slug: str, checksum: str) -> str:
         return f"templates/{slug}/{checksum}.typ"
 
     async def generate_upload_url(
         self,
+        *,
         slug: str,
         checksum: str,
         expires_in: int = settings.S3_STORAGE.UPLOAD_URL_EXPIRES_IN,
@@ -32,16 +33,16 @@ class TemplateStorageRepository:
             "put_object",
             Params={
                 "Bucket": settings.S3_STORAGE.BUCKET,
-                "Key": self.staging_key(slug, checksum),
+                "Key": self.staging_key(slug=slug, checksum=checksum),
                 "ContentType": "application/x-typst",
                 "ChecksumSHA256": checksum_b64,
             },
             ExpiresIn=expires_in,
         )
 
-    async def promote(self, slug: str, checksum: str) -> str:
+    async def promote(self, *, slug: str, checksum: str) -> str:
         bucket = settings.S3_STORAGE.BUCKET
-        target_key = self.key(slug, checksum)
+        target_key = self.key(slug=slug, checksum=checksum)
 
         try:
             await self.s3_client.head_object(Bucket=bucket, Key=target_key)
@@ -52,7 +53,7 @@ class TemplateStorageRepository:
             # dedup, reuse the existing object instead of requiring a re-upload.
             return target_key
 
-        source_key = self.staging_key(slug, checksum)
+        source_key = self.staging_key(slug=slug, checksum=checksum)
         try:
             await self.s3_client.copy_object(
                 Bucket=bucket,
@@ -68,7 +69,7 @@ class TemplateStorageRepository:
         return target_key
 
     async def generate_get_url(
-        self, key: str, expires_in: int = settings.S3_STORAGE.GET_URL_EXPIRES_IN
+        self, *, key: str, expires_in: int = settings.S3_STORAGE.GET_URL_EXPIRES_IN
     ) -> str:
         return await self.s3_client.generate_presigned_url(
             "get_object",
@@ -76,11 +77,17 @@ class TemplateStorageRepository:
             ExpiresIn=expires_in,
         )
 
+    async def download(self, *, key: str) -> bytes:
+        response = await self.s3_client.get_object(
+            Bucket=settings.S3_STORAGE.BUCKET, Key=key
+        )
+        return await response["Body"].read()
+
 
 def get_template_storage_repository(
     s3_client: S3ClientDep,
 ) -> TemplateStorageRepository:
-    return TemplateStorageRepository(s3_client)
+    return TemplateStorageRepository(s3_client=s3_client)
 
 
 TemplateStorageRepositoryDep = Annotated[

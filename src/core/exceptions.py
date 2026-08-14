@@ -22,3 +22,7 @@ class NotFoundException(AppException):
 
 class ConflictException(AppException):
     code = ErrorCode.CONFLICT
+
+
+class InternalServerException(AppException):
+    code = ErrorCode.INTERNAL_ERROR

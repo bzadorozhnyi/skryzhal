@@ -12,11 +12,13 @@ from templates.repositories.storage import (
 
 
 class CreateUploadUrlUseCase:
-    def __init__(self, storage: TemplateStorageRepository):
+    def __init__(self, *, storage: TemplateStorageRepository):
         self.storage = storage
 
-    async def execute(self, data: UploadUrlIn) -> UploadUrlOut:
-        upload_url = await self.storage.generate_upload_url(data.slug, data.checksum)
+    async def execute(self, *, data: UploadUrlIn) -> UploadUrlOut:
+        upload_url = await self.storage.generate_upload_url(
+            slug=data.slug, checksum=data.checksum
+        )
         return UploadUrlOut(
             upload_url=upload_url, expires_in=settings.S3_STORAGE.UPLOAD_URL_EXPIRES_IN
         )
@@ -25,7 +27,7 @@ class CreateUploadUrlUseCase:
 def get_create_upload_url_use_case(
     storage: TemplateStorageRepositoryDep,
 ) -> CreateUploadUrlUseCase:
-    return CreateUploadUrlUseCase(storage)
+    return CreateUploadUrlUseCase(storage=storage)
 
 
 CreateUploadUrlUseCaseDep = Annotated[

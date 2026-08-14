@@ -10,4 +10,4 @@ from templates.use_cases.create_template import CreateTemplateUseCaseDep
 async def create_template(
     data: CreateTemplateIn, use_case: CreateTemplateUseCaseDep
 ) -> TemplateOut:
-    return await use_case.execute(data)
+    return await use_case.execute(data=data)
