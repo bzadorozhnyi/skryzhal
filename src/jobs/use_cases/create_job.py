@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.db import SessionDep
 from core.exceptions import ConflictException, NotFoundException
+from core.logging import logger
 from jobs.dto.job import CreateJobResultDTO, JobDTO
 from jobs.endpoints.v1.schemas.request.job import CreateJobIn
 from jobs.models.render_job import JobStatus, RenderJob
@@ -71,6 +72,9 @@ class CreateJobUseCase:
             )
             return CreateJobResultDTO(job=reconciled, created=False)
 
+        logger.bind(job_id=str(job.id), template_id=str(template.id)).info(
+            "Job created"
+        )
         return CreateJobResultDTO(job=self._to_dto(job), created=True)
 
     @staticmethod

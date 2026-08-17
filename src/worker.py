@@ -34,6 +34,7 @@ async def process_message(
 ) -> None:
     job_id = uuid.UUID(json.loads(message["Body"])["job_id"])
     receipt_handle = message["ReceiptHandle"]
+    log = logger.bind(job_id=str(job_id))
 
     heartbeat = asyncio.create_task(
         _extend_visibility_periodically(
@@ -53,16 +54,15 @@ async def process_message(
             try:
                 await render_service.render(job_id=job_id)
             except Exception:
-                logger.exception(f"Transient failure rendering job {job_id}")
+                log.exception("Transient failure rendering job")
                 job = await job_repository.get_by_id(job_id=job_id)
                 attempt_count = job.attempt_count if job else 1
                 backoff = _compute_backoff(attempt_count=attempt_count)
                 await job_queue.extend_visibility(
                     receipt_handle=receipt_handle, visibility_timeout=backoff
                 )
-                logger.info(
-                    f"Job {job_id} will be retried in {backoff}s "
-                    f"(attempt {attempt_count})"
+                log.bind(backoff_seconds=backoff, attempt_count=attempt_count).info(
+                    "Job will be retried"
                 )
                 return
     finally:
@@ -71,7 +71,7 @@ async def process_message(
             await heartbeat
 
     await job_queue.delete(receipt_handle=receipt_handle)
-    logger.info(f"Rendered job {job_id}")
+    log.info("Rendered job")
 
 
 async def main() -> None:
@@ -92,9 +92,8 @@ async def main() -> None:
                         message=message, job_queue=job_queue, s3_client=s3_client
                     )
                 except Exception:
-                    logger.exception(
-                        f"Unexpected failure processing message "
-                        f"{message.get('MessageId')}, skipping"
+                    logger.bind(message_id=message.get("MessageId")).exception(
+                        "Unexpected failure processing message, skipping"
                     )
 
 

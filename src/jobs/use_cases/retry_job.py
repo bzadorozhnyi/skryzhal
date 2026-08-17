@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.db import SessionDep
 from core.exceptions import InternalServerException, NotFoundException
+from core.logging import logger
 from jobs.dto.job import JobDTO
 from jobs.models.render_job import JobStatus
 from jobs.repositories.job import JobRepository, JobRepositoryDep
@@ -43,6 +44,7 @@ class RetryJobUseCase:
         if job is None:
             raise InternalServerException(f"Job {job_id} disappeared after commit")
 
+        logger.bind(job_id=str(job.id)).info("Job retried")
         return JobDTO(
             id=job.id,
             template_id=job.template_id,

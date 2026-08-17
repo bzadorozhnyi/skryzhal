@@ -16,6 +16,17 @@ x-app-env: &app-env
   SQS__SECRET_KEY: test
   SQS__REGION: us-east-1
 
+# Requires the Loki Docker logging driver plugin to be installed once on the
+# host (Docker Desktop on macOS can't bind-mount the engine's internal log
+# files, so this ships logs to Loki over HTTP instead of reading files):
+#   docker plugin install grafana/loki-docker-driver:latest --alias loki --grant-all-permissions
+x-loki-logging: &loki-logging
+  driver: loki
+  options:
+    loki-url: "http://localhost:3100/loki/api/v1/push"
+    loki-retries: "5"
+    loki-batch-size: "400"
+
 services:
   db:
     image: postgres:18
@@ -62,6 +73,9 @@ services:
         condition: service_healthy
       localstack:
         condition: service_healthy
+      loki:
+        condition: service_started
+    logging: *loki-logging
 
   worker:
     build: .
@@ -73,6 +87,9 @@ services:
         condition: service_healthy
       localstack:
         condition: service_healthy
+      loki:
+        condition: service_started
+    logging: *loki-logging
 
   relay:
     build: .
@@ -84,7 +101,30 @@ services:
         condition: service_healthy
       localstack:
         condition: service_healthy
+      loki:
+        condition: service_started
+    logging: *loki-logging
+
+  loki:
+    image: grafana/loki:3.0.0
+    ports:
+      - "3100:3100"
+    command: -config.file=/etc/loki/local-config.yaml
+
+  grafana:
+    image: grafana/grafana:11.0.0
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+    volumes:
+      - ./observability/grafana-provisioning:/etc/grafana/provisioning
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - loki
 
 volumes:
   postgres_data:
   localstack_data:
+  grafana_data:

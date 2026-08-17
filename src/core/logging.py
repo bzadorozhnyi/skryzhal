@@ -3,6 +3,8 @@ from contextvars import ContextVar
 
 from loguru import logger as _loguru_logger
 
+from core.settings import LogFormat, settings
+
 logger_format = (
     "<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | "
     "<level>{level: <8}</level> | "
@@ -11,14 +13,24 @@ logger_format = (
 )
 
 _loguru_logger.remove()
-_loguru_logger.add(
-    sys.stdout,
-    format=logger_format,
-    level="INFO",
-    backtrace=True,
-    diagnose=True,
-    enqueue=True,
-)
+if settings.LOGGING.FORMAT == LogFormat.JSON:
+    _loguru_logger.add(
+        sys.stdout,
+        serialize=True,
+        level="INFO",
+        backtrace=True,
+        diagnose=True,
+        enqueue=True,
+    )
+else:
+    _loguru_logger.add(
+        sys.stdout,
+        format=logger_format,
+        level="INFO",
+        backtrace=True,
+        diagnose=True,
+        enqueue=True,
+    )
 
 request_id_var: ContextVar[str] = ContextVar("request_id", default="-")
 
