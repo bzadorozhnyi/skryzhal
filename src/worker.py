@@ -2,6 +2,7 @@ import asyncio
 import contextlib
 import json
 import uuid
+from pathlib import Path
 
 from core.db import async_session
 from core.logging import logger
@@ -14,6 +15,11 @@ from jobs.repositories.storage import JobStorageRepository
 from jobs.services.render import RenderService
 from templates.repositories.storage import TemplateStorageRepository
 from templates.repositories.template import TemplateRepository
+
+# Touched on every main-loop iteration; docker-compose healthcheck fails if
+# this goes stale, catching a hung loop that a plain "process is alive"
+# check would miss.
+HEARTBEAT_FILE = Path("/tmp/worker_heartbeat")
 
 
 async def _extend_visibility_periodically(
@@ -79,6 +85,7 @@ async def main() -> None:
         job_queue = JobQueueRepository(sqs_client=sqs_client)
         logger.info("Worker started, polling SQS...")
         while True:
+            HEARTBEAT_FILE.touch()
             try:
                 messages = await job_queue.receive()
             except Exception:
@@ -95,6 +102,7 @@ async def main() -> None:
                     logger.bind(message_id=message.get("MessageId")).exception(
                         "Unexpected failure processing message, skipping"
                     )
+                HEARTBEAT_FILE.touch()
 
 
 if __name__ == "__main__":
