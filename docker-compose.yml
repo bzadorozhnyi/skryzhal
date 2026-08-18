@@ -97,6 +97,8 @@ services:
     command: python worker.py
     environment:
       <<: *app-env
+    ports:
+      - "9101:9100"
     depends_on:
       db:
         condition: service_healthy
@@ -123,6 +125,8 @@ services:
     command: python relay.py
     environment:
       <<: *app-env
+    ports:
+      - "9102:9100"
     depends_on:
       db:
         condition: service_healthy
@@ -150,6 +154,16 @@ services:
       - "3100:3100"
     command: -config.file=/etc/loki/local-config.yaml
 
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+
   grafana:
     image: grafana/grafana:11.0.0
     ports:
@@ -162,8 +176,10 @@ services:
       - grafana_data:/var/lib/grafana
     depends_on:
       - loki
+      - prometheus
 
 volumes:
   postgres_data:
   localstack_data:
   grafana_data:
+  prometheus_data:

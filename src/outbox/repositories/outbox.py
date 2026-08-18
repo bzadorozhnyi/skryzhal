@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import Depends
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.db import SessionDep
@@ -37,6 +37,14 @@ class OutboxRepository:
         # updated_at elsewhere), so store a naive UTC value, not aware.
         event.published_at = datetime.now(UTC).replace(tzinfo=None)
         event.dispatch_id = dispatch_id
+
+    async def count_unpublished(self) -> int:
+        result = await self.session.execute(
+            select(func.count())
+            .select_from(OutboxEvent)
+            .where(OutboxEvent.published_at.is_(None))
+        )
+        return result.scalar_one()
 
 
 def get_outbox_repository(session: SessionDep) -> OutboxRepository:
