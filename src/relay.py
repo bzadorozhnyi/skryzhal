@@ -1,5 +1,6 @@
 import asyncio
 import uuid
+from pathlib import Path
 
 from core.db import async_session
 from core.logging import logger
@@ -7,6 +8,11 @@ from core.settings import settings
 from core.sqs import sqs_client_context
 from jobs.repositories.queue import JobQueueRepository
 from outbox.repositories.outbox import OutboxRepository
+
+# Touched on every main-loop iteration; docker-compose healthcheck fails if
+# this goes stale, catching a hung loop that a plain "process is alive"
+# check would miss.
+HEARTBEAT_FILE = Path("/tmp/relay_heartbeat")
 
 
 async def relay_once(*, job_queue: JobQueueRepository) -> int:
@@ -52,6 +58,7 @@ async def main() -> None:
         job_queue = JobQueueRepository(sqs_client=sqs_client)
         logger.info("Relay started, polling outbox...")
         while True:
+            HEARTBEAT_FILE.touch()
             try:
                 published = await relay_once(job_queue=job_queue)
             except Exception:

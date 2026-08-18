@@ -76,6 +76,21 @@ services:
       loki:
         condition: service_started
     logging: *loki-logging
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - |
+          import sys, urllib.request
+          try:
+              resp = urllib.request.urlopen("http://localhost:8000/ready", timeout=3)
+              sys.exit(0 if resp.status == 200 else 1)
+          except Exception:
+              sys.exit(1)
+      interval: 10s
+      timeout: 5s
+      retries: 3
 
   worker:
     build: .
@@ -90,6 +105,18 @@ services:
       loki:
         condition: service_started
     logging: *loki-logging
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - |
+          import sys, pathlib, time
+          p = pathlib.Path("/tmp/worker_heartbeat")
+          sys.exit(0 if p.exists() and time.time() - p.stat().st_mtime < 60 else 1)
+      interval: 15s
+      timeout: 5s
+      retries: 3
 
   relay:
     build: .
@@ -104,6 +131,18 @@ services:
       loki:
         condition: service_started
     logging: *loki-logging
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - |
+          import sys, pathlib, time
+          p = pathlib.Path("/tmp/relay_heartbeat")
+          sys.exit(0 if p.exists() and time.time() - p.stat().st_mtime < 30 else 1)
+      interval: 10s
+      timeout: 5s
+      retries: 3
 
   loki:
     image: grafana/loki:3.0.0
