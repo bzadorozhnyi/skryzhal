@@ -10,6 +10,7 @@ from core.middlewares.metrics import MetricsMiddleware
 from core.middlewares.request_id import RequestIDMiddleware
 from core.s3 import s3_client_context
 from core.sqs import sqs_client_context
+from core.tracing import instrument_fastapi
 from routes import router
 
 
@@ -23,6 +24,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
+instrument_fastapi(app=app)
 app.add_middleware(MetricsMiddleware)
 app.add_middleware(RequestIDMiddleware)
 app.include_router(router)

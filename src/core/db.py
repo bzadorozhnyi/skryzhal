@@ -8,9 +8,11 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy.sql import func
 
 from core.settings import settings
+from core.tracing import instrument_sqlalchemy
 
 engine = create_async_engine(settings.DB.url, echo=True)
 async_session = async_sessionmaker(engine, expire_on_commit=False)
+instrument_sqlalchemy(engine=engine)
 
 naming_convention = {
     "ix": "ix_%(column_0_label)s",

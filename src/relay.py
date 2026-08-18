@@ -2,12 +2,14 @@ import asyncio
 import uuid
 from pathlib import Path
 
+from opentelemetry.trace import SpanKind
 from prometheus_client import Gauge, start_http_server
 
 from core.db import async_session
 from core.logging import logger
 from core.settings import settings
 from core.sqs import sqs_client_context
+from core.tracing import start_linked_span_batch
 from jobs.repositories.queue import JobQueueRepository
 from outbox.repositories.outbox import OutboxRepository
 
@@ -39,9 +41,25 @@ async def relay_once(*, job_queue: JobQueueRepository) -> int:
             key: uuid.UUID(event.payload["job_id"])
             for key, event in events_by_key.items()
         }
-        message_ids_by_key = await job_queue.publish_batch(
-            job_ids_by_key=job_ids_by_key
+
+        spans, message_attributes_by_key = start_linked_span_batch(
+            carriers_by_key={
+                key: event.payload.get("trace_carrier", {})
+                for key, event in events_by_key.items()
+            },
+            name="relay.publish",
+            kind=SpanKind.PRODUCER,
         )
+        for key, span in spans.items():
+            span.set_attribute("job.id", str(job_ids_by_key[key]))
+        try:
+            message_ids_by_key = await job_queue.publish_batch(
+                job_ids_by_key=job_ids_by_key,
+                message_attributes_by_key=message_attributes_by_key,
+            )
+        finally:
+            for span in spans.values():
+                span.end()
 
         for key, message_id in message_ids_by_key.items():
             await outbox_repository.mark_published(

@@ -15,6 +15,7 @@ x-app-env: &app-env
   SQS__ACCESS_KEY: test
   SQS__SECRET_KEY: test
   SQS__REGION: us-east-1
+  TRACING__OTLP_ENDPOINT: http://tempo:4317
 
 # Requires the Loki Docker logging driver plugin to be installed once on the
 # host (Docker Desktop on macOS can't bind-mount the engine's internal log
@@ -66,6 +67,7 @@ services:
     build: .
     environment:
       <<: *app-env
+      TRACING__SERVICE_NAME: api
     ports:
       - "8000:8000"
     depends_on:
@@ -74,6 +76,8 @@ services:
       localstack:
         condition: service_healthy
       loki:
+        condition: service_started
+      tempo:
         condition: service_started
     logging: *loki-logging
     healthcheck:
@@ -97,6 +101,7 @@ services:
     command: python worker.py
     environment:
       <<: *app-env
+      TRACING__SERVICE_NAME: worker
     ports:
       - "9101:9100"
     depends_on:
@@ -105,6 +110,8 @@ services:
       localstack:
         condition: service_healthy
       loki:
+        condition: service_started
+      tempo:
         condition: service_started
     logging: *loki-logging
     healthcheck:
@@ -125,6 +132,7 @@ services:
     command: python relay.py
     environment:
       <<: *app-env
+      TRACING__SERVICE_NAME: relay
     ports:
       - "9102:9100"
     depends_on:
@@ -133,6 +141,8 @@ services:
       localstack:
         condition: service_healthy
       loki:
+        condition: service_started
+      tempo:
         condition: service_started
     logging: *loki-logging
     healthcheck:
@@ -153,6 +163,17 @@ services:
     ports:
       - "3100:3100"
     command: -config.file=/etc/loki/local-config.yaml
+
+  tempo:
+    image: grafana/tempo:2.5.0
+    ports:
+      - "4317:4317"
+      - "3200:3200"
+    volumes:
+      - ./observability/tempo/tempo.yaml:/etc/tempo.yaml
+      - tempo_data:/var/tempo
+    command:
+      - -config.file=/etc/tempo.yaml
 
   prometheus:
     image: prom/prometheus:v2.53.0
@@ -189,9 +210,11 @@ services:
     depends_on:
       - loki
       - prometheus
+      - tempo
 
 volumes:
   postgres_data:
   localstack_data:
   grafana_data:
   prometheus_data:
+  tempo_data:

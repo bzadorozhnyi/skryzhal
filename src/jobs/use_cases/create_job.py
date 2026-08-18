@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.db import SessionDep
 from core.exceptions import ConflictException, NotFoundException
 from core.logging import logger
+from core.tracing import inject_current_carrier, tag_current_span
 from jobs.dto.job import CreateJobResultDTO, JobDTO
 from jobs.endpoints.v1.schemas.request.job import CreateJobIn
 from jobs.models.render_job import JobStatus, RenderJob
@@ -53,11 +54,15 @@ class CreateJobUseCase:
             input_data=data.input_data,
             status=JobStatus.PENDING,
         )
+        tag_current_span(**{"job.id": str(job.id)})
         await self.job_repository.create(job=job)
         await self.outbox_repository.create(
             event=OutboxEvent(
                 event_type=OutboxEventType.JOB_CREATED,
-                payload={"job_id": str(job.id)},
+                payload={
+                    "job_id": str(job.id),
+                    "trace_carrier": inject_current_carrier(),
+                },
             )
         )
         try:

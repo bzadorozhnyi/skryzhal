@@ -7,6 +7,7 @@ from fastapi import Depends
 from core.exceptions import NotFoundException
 from core.s3 import S3ClientDep
 from core.settings import settings
+from core.tracing import tracer
 
 
 class TemplateStorageRepository:
@@ -78,10 +79,11 @@ class TemplateStorageRepository:
         )
 
     async def download(self, *, key: str) -> bytes:
-        response = await self.s3_client.get_object(
-            Bucket=settings.S3_STORAGE.BUCKET, Key=key
-        )
-        return await response["Body"].read()
+        with tracer.start_as_current_span("s3.download", attributes={"s3.key": key}):
+            response = await self.s3_client.get_object(
+                Bucket=settings.S3_STORAGE.BUCKET, Key=key
+            )
+            return await response["Body"].read()
 
 
 def get_template_storage_repository(

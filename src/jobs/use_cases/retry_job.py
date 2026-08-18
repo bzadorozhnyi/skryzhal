@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.db import SessionDep
 from core.exceptions import InternalServerException, NotFoundException
 from core.logging import logger
+from core.tracing import inject_current_carrier, tag_current_span
 from jobs.dto.job import JobDTO
 from jobs.models.render_job import JobStatus
 from jobs.repositories.job import JobRepository, JobRepositoryDep
@@ -33,10 +34,17 @@ class RetryJobUseCase:
             raise NotFoundException(f"Job {job_id} not found")
 
         transition(job=job, status=JobStatus.PENDING)
+        tag_current_span(**{"job.id": str(job.id)})
+        # A retry is its own new trace root (a fresh HTTP request), not a
+        # continuation of the original create_job trace — same reasoning as
+        # why request_id doesn't follow a job across retries either.
         await self.outbox_repository.create(
             event=OutboxEvent(
                 event_type=OutboxEventType.JOB_RETRIED,
-                payload={"job_id": str(job.id)},
+                payload={
+                    "job_id": str(job.id),
+                    "trace_carrier": inject_current_carrier(),
+                },
             )
         )
         await self.session.commit()

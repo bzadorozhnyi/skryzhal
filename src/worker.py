@@ -4,6 +4,7 @@ import json
 import uuid
 from pathlib import Path
 
+from opentelemetry.trace import SpanKind
 from prometheus_client import Gauge, start_http_server
 
 from core.db import async_session
@@ -11,6 +12,7 @@ from core.logging import logger
 from core.s3 import s3_client_context
 from core.settings import settings
 from core.sqs import sqs_client_context
+from core.tracing import linked_span
 from jobs.repositories.job import JobRepository
 from jobs.repositories.queue import JobQueueRepository
 from jobs.repositories.storage import JobStorageRepository
@@ -42,6 +44,15 @@ def _compute_backoff(*, attempt_count: int) -> int:
     return min(delay, settings.SQS.RETRY_BACKOFF_MAX_SECONDS)
 
 
+def _extract_carrier(*, message: dict) -> dict[str, str]:
+    attributes = message.get("MessageAttributes", {})
+    return {
+        name: value["StringValue"]
+        for name, value in attributes.items()
+        if "StringValue" in value
+    }
+
+
 async def process_message(
     *, message: dict, job_queue: JobQueueRepository, s3_client
 ) -> None:
@@ -65,7 +76,13 @@ async def process_message(
                 template_storage=TemplateStorageRepository(s3_client=s3_client),
             )
             try:
-                await render_service.render(job_id=job_id)
+                with linked_span(
+                    carrier=_extract_carrier(message=message),
+                    name="worker.process_message",
+                    kind=SpanKind.CONSUMER,
+                ) as span:
+                    span.set_attribute("job.id", str(job_id))
+                    await render_service.render(job_id=job_id)
             except Exception:
                 log.exception("Transient failure rendering job")
                 job = await job_repository.get_by_id(job_id=job_id)
