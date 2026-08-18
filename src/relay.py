@@ -32,7 +32,6 @@ async def relay_once(*, job_queue: JobQueueRepository) -> int:
             limit=settings.OUTBOX.BATCH_SIZE
         )
         if not events:
-            OUTBOX_UNPUBLISHED.set(await outbox_repository.count_unpublished())
             return 0
 
         events_by_key = {str(event.id): event for event in events}
@@ -55,7 +54,6 @@ async def relay_once(*, job_queue: JobQueueRepository) -> int:
             ).info("Relayed outbox event")
 
         await session.commit()
-        OUTBOX_UNPUBLISHED.set(await outbox_repository.count_unpublished())
 
         published_count = len(message_ids_by_key)
         failed_count = len(events) - published_count
@@ -78,6 +76,16 @@ async def main() -> None:
             except Exception:
                 logger.exception("Failed to relay outbox batch, will retry")
                 published = 0
+
+            # Always refreshed, regardless of whether the publish attempt
+            # above succeeded — otherwise a failing downstream queue leaves
+            # this gauge frozen at its last-good value, hiding exactly the
+            # backlog growth an operator would want to see during an outage.
+            async with async_session() as session:
+                OUTBOX_UNPUBLISHED.set(
+                    await OutboxRepository(session=session).count_unpublished()
+                )
+
             if not published:
                 await asyncio.sleep(settings.OUTBOX.POLL_INTERVAL_SECONDS)
 
