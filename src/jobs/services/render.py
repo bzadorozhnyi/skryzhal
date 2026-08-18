@@ -1,7 +1,9 @@
+import time
 import uuid
 from typing import Annotated
 
 from fastapi import Depends
+from prometheus_client import Counter, Histogram
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.db import SessionDep
@@ -16,6 +18,16 @@ from templates.repositories.storage import (
     TemplateStorageRepositoryDep,
 )
 from templates.repositories.template import TemplateRepository, TemplateRepositoryDep
+
+# Only terminal outcomes (COMPLETED/FAILED) are recorded — a transient
+# failure that reverts a job to PENDING for retry isn't "done" yet, so it
+# shouldn't count toward completion rate or duration.
+JOBS_COMPLETED = Counter(
+    "jobs_completed_total", "Render jobs that reached a terminal status", ["status"]
+)
+RENDER_DURATION = Histogram(
+    "render_duration_seconds", "Time from claiming a job to a terminal status"
+)
 
 
 class RenderService:
@@ -42,6 +54,7 @@ class RenderService:
             )
             return
 
+        start = time.perf_counter()
         try:
             template = await self.template_repository.get_by_id(
                 template_id=job.template_id
@@ -51,6 +64,7 @@ class RenderService:
                 job.attempt_count += 1
                 transition(job=job, status=JobStatus.FAILED)
                 await self.session.commit()
+                self._record_outcome(status=JobStatus.FAILED, start=start)
                 return
 
             template_bytes = await self.template_storage.download(key=template.s3_key)
@@ -62,11 +76,13 @@ class RenderService:
             )
             transition(job=job, status=JobStatus.COMPLETED)
             await self.session.commit()
+            self._record_outcome(status=JobStatus.COMPLETED, start=start)
         except TypstCompilationError as exc:
             job.error_message = exc.stderr
             job.attempt_count += 1
             transition(job=job, status=JobStatus.FAILED)
             await self.session.commit()
+            self._record_outcome(status=JobStatus.FAILED, start=start)
         except Exception:
             # Unexpected/transient failure (S3 outage, DB hiccup, etc.) — revert
             # to PENDING so SQS redelivery + claim_for_processing can retry it,
@@ -75,6 +91,11 @@ class RenderService:
             transition(job=job, status=JobStatus.PENDING)
             await self.session.commit()
             raise
+
+    @staticmethod
+    def _record_outcome(*, status: JobStatus, start: float) -> None:
+        JOBS_COMPLETED.labels(status=status).inc()
+        RENDER_DURATION.observe(time.perf_counter() - start)
 
 
 def get_render_service(

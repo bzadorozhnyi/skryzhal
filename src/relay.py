@@ -2,6 +2,8 @@ import asyncio
 import uuid
 from pathlib import Path
 
+from prometheus_client import Gauge, start_http_server
+
 from core.db import async_session
 from core.logging import logger
 from core.settings import settings
@@ -13,6 +15,14 @@ from outbox.repositories.outbox import OutboxRepository
 # this goes stale, catching a hung loop that a plain "process is alive"
 # check would miss.
 HEARTBEAT_FILE = Path("/tmp/relay_heartbeat")
+RELAY_HEARTBEAT = Gauge(
+    "relay_last_successful_poll_timestamp",
+    "Unix timestamp of the last completed main-loop iteration",
+)
+OUTBOX_UNPUBLISHED = Gauge(
+    "outbox_unpublished_count", "Number of outbox events not yet published"
+)
+METRICS_PORT = 9100
 
 
 async def relay_once(*, job_queue: JobQueueRepository) -> int:
@@ -22,6 +32,7 @@ async def relay_once(*, job_queue: JobQueueRepository) -> int:
             limit=settings.OUTBOX.BATCH_SIZE
         )
         if not events:
+            OUTBOX_UNPUBLISHED.set(await outbox_repository.count_unpublished())
             return 0
 
         events_by_key = {str(event.id): event for event in events}
@@ -44,6 +55,7 @@ async def relay_once(*, job_queue: JobQueueRepository) -> int:
             ).info("Relayed outbox event")
 
         await session.commit()
+        OUTBOX_UNPUBLISHED.set(await outbox_repository.count_unpublished())
 
         published_count = len(message_ids_by_key)
         failed_count = len(events) - published_count
@@ -54,11 +66,13 @@ async def relay_once(*, job_queue: JobQueueRepository) -> int:
 
 
 async def main() -> None:
+    start_http_server(METRICS_PORT)
     async with sqs_client_context() as sqs_client:
         job_queue = JobQueueRepository(sqs_client=sqs_client)
         logger.info("Relay started, polling outbox...")
         while True:
             HEARTBEAT_FILE.touch()
+            RELAY_HEARTBEAT.set_to_current_time()
             try:
                 published = await relay_once(job_queue=job_queue)
             except Exception:

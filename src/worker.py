@@ -4,6 +4,8 @@ import json
 import uuid
 from pathlib import Path
 
+from prometheus_client import Gauge, start_http_server
+
 from core.db import async_session
 from core.logging import logger
 from core.s3 import s3_client_context
@@ -20,6 +22,11 @@ from templates.repositories.template import TemplateRepository
 # this goes stale, catching a hung loop that a plain "process is alive"
 # check would miss.
 HEARTBEAT_FILE = Path("/tmp/worker_heartbeat")
+WORKER_HEARTBEAT = Gauge(
+    "worker_last_successful_poll_timestamp",
+    "Unix timestamp of the last completed main-loop iteration",
+)
+METRICS_PORT = 9100
 
 
 async def _extend_visibility_periodically(
@@ -81,11 +88,13 @@ async def process_message(
 
 
 async def main() -> None:
+    start_http_server(METRICS_PORT)
     async with s3_client_context() as s3_client, sqs_client_context() as sqs_client:
         job_queue = JobQueueRepository(sqs_client=sqs_client)
         logger.info("Worker started, polling SQS...")
         while True:
             HEARTBEAT_FILE.touch()
+            WORKER_HEARTBEAT.set_to_current_time()
             try:
                 messages = await job_queue.receive()
             except Exception:
@@ -103,6 +112,7 @@ async def main() -> None:
                         "Unexpected failure processing message, skipping"
                     )
                 HEARTBEAT_FILE.touch()
+                WORKER_HEARTBEAT.set_to_current_time()
 
 
 if __name__ == "__main__":
