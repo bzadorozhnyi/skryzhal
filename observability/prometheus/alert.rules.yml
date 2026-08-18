@@ -1,0 +1,50 @@
+groups:
+  - name: skryzhal
+    rules:
+      # Symptom-based: outbox backlog not draining (relay stuck, or the
+      # downstream queue it publishes to is unreachable). Threshold is
+      # low (5) to demonstrate on dev-scale traffic — in production this
+      # would come from an observed normal-traffic baseline, not a guess.
+      - alert: OutboxBacklogGrowing
+        expr: outbox_unpublished_count > 5
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Outbox backlog is {{ $value }} and hasn't drained for 2m"
+          description: "relay may be stuck, or its downstream queue is unreachable — check relay logs."
+
+      # Dead man's switch: main-loop heartbeat gauges, thresholds match the
+      # docker-compose healthcheck staleness windows for the same processes.
+      - alert: WorkerHeartbeatStale
+        expr: time() - worker_last_successful_poll_timestamp > 60
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "worker heartbeat is {{ $value }}s stale"
+          description: "worker's main loop may be hung."
+
+      - alert: RelayHeartbeatStale
+        expr: time() - relay_last_successful_poll_timestamp > 30
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "relay heartbeat is {{ $value }}s stale"
+          description: "relay's main loop may be hung."
+
+      # Symptom-based: job failure rate, not any specific underlying cause.
+      - alert: HighJobFailureRate
+        expr: |
+          (
+            sum(rate(jobs_completed_total{status="FAILED"}[10m]))
+            /
+            sum(rate(jobs_completed_total[10m]))
+          ) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Job failure rate is {{ $value | humanizePercentage }} over 10m"
+          description: "More than 10% of jobs are failing."
