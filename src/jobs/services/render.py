@@ -37,7 +37,9 @@ class RenderService:
     async def render(self, *, job_id: uuid.UUID) -> None:
         job = await self.job_repository.claim_for_processing(job_id=job_id)
         if job is None:
-            logger.info(f"Job {job_id} not found or already claimed, skipping")
+            logger.bind(job_id=str(job_id)).info(
+                "Job not found or already claimed, skipping"
+            )
             return
 
         try:

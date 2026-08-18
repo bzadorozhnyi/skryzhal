@@ -1,3 +1,5 @@
+from enum import StrEnum
+
 from pydantic import BaseModel
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -58,11 +60,21 @@ class OutboxSettings(BaseModel):
     POLL_INTERVAL_SECONDS: int = 2
 
 
+class LogFormat(StrEnum):
+    JSON = "JSON"
+    PRETTY = "PRETTY"
+
+
+class LoggingSettings(BaseModel):
+    FORMAT: LogFormat = LogFormat.JSON
+
+
 class Settings(BaseSettings):
     DB: DBSettings
     S3_STORAGE: S3StorageSettings
     SQS: SQSSettings
     OUTBOX: OutboxSettings = OutboxSettings()
+    LOGGING: LoggingSettings = LoggingSettings()
 
     model_config = SettingsConfigDict(
         env_file=(".env", "../.env"),

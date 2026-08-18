@@ -31,6 +31,11 @@ async def relay_once(*, job_queue: JobQueueRepository) -> int:
             await outbox_repository.mark_published(
                 event=events_by_key[key], dispatch_id=message_id
             )
+            logger.bind(
+                job_id=str(job_ids_by_key[key]),
+                outbox_event_id=key,
+                dispatch_id=message_id,
+            ).info("Relayed outbox event")
 
         await session.commit()
 
