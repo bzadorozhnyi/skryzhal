@@ -69,12 +69,20 @@ class LoggingSettings(BaseModel):
     FORMAT: LogFormat = LogFormat.JSON
 
 
+class TracingSettings(BaseModel):
+    # Distinct per process (api/worker/relay) — becomes the OTel "service.name"
+    # resource attribute, how spans are grouped/filtered in Tempo/Grafana.
+    SERVICE_NAME: str
+    OTLP_ENDPOINT: str = "http://tempo:4317"
+
+
 class Settings(BaseSettings):
     DB: DBSettings
     S3_STORAGE: S3StorageSettings
     SQS: SQSSettings
     OUTBOX: OutboxSettings = OutboxSettings()
     LOGGING: LoggingSettings = LoggingSettings()
+    TRACING: TracingSettings
 
     model_config = SettingsConfigDict(
         env_file=(".env", "../.env"),

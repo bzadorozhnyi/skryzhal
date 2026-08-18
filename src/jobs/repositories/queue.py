@@ -17,7 +17,10 @@ class JobQueueRepository:
         return response["QueueUrl"]
 
     async def publish_batch(
-        self, *, job_ids_by_key: dict[str, uuid.UUID]
+        self,
+        *,
+        job_ids_by_key: dict[str, uuid.UUID],
+        message_attributes_by_key: dict[str, dict[str, str]] | None = None,
     ) -> dict[str, str]:
         """Batch-publishes jobs to SQS. `job_ids_by_key` maps a caller-chosen
         correlation key (unique within the batch, at most 10 entries per the
@@ -25,10 +28,22 @@ class JobQueueRepository:
         same key mapped to the resulting SQS MessageId, for entries that
         succeeded — callers must check for missing keys to detect per-entry
         failures.
+
+        `message_attributes_by_key` optionally carries plain string
+        attributes (e.g. an injected OTel trace carrier) per entry, keyed
+        the same way.
         """
         queue_url = await self._queue_url(queue_name=settings.SQS.QUEUE_NAME)
+        message_attributes_by_key = message_attributes_by_key or {}
         entries = [
-            {"Id": key, "MessageBody": json.dumps({"job_id": str(job_id)})}
+            {
+                "Id": key,
+                "MessageBody": json.dumps({"job_id": str(job_id)}),
+                "MessageAttributes": {
+                    name: {"DataType": "String", "StringValue": value}
+                    for name, value in message_attributes_by_key.get(key, {}).items()
+                },
+            }
             for key, job_id in job_ids_by_key.items()
         ]
         response = await self.sqs_client.send_message_batch(
@@ -49,6 +64,7 @@ class JobQueueRepository:
             QueueUrl=queue_url,
             WaitTimeSeconds=wait_time_seconds,
             MaxNumberOfMessages=max_messages,
+            MessageAttributeNames=["All"],
         )
         return response.get("Messages", [])
 
