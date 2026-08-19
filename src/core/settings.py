@@ -1,6 +1,7 @@
 from enum import StrEnum
+from typing import Self
 
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -52,6 +53,21 @@ class SQSSettings(BaseModel):
     # How long the worker waits before retrying after a failed receive() call
     # (e.g. SQS temporarily unreachable), so it doesn't busy-loop retrying.
     POLL_ERROR_BACKOFF_SECONDS: int = 5
+    LEASE_BUFFER_SECONDS: int = 5
+
+    @model_validator(mode="after")
+    def _validate_lease_buffer(self) -> Self:
+        if self.VISIBILITY_TIMEOUT_SECONDS <= self.LEASE_BUFFER_SECONDS:
+            raise ValueError(
+                "VISIBILITY_TIMEOUT_SECONDS must exceed LEASE_BUFFER_SECONDS"
+            )
+        return self
+
+    @property
+    def LEASE_SECONDS(self) -> int:
+        # Always shorter than VISIBILITY_TIMEOUT_SECONDS, so a redelivered
+        # message never finds a claim that's still "validly" held in the DB.
+        return self.VISIBILITY_TIMEOUT_SECONDS - self.LEASE_BUFFER_SECONDS
 
 
 class OutboxSettings(BaseModel):

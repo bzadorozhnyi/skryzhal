@@ -2,6 +2,7 @@ import asyncio
 import contextlib
 import json
 import uuid
+from datetime import datetime
 from pathlib import Path
 
 from opentelemetry.trace import SpanKind
@@ -31,12 +32,30 @@ WORKER_HEARTBEAT = Gauge(
 METRICS_PORT = 9100
 
 
-async def _extend_visibility_periodically(
-    *, job_queue: JobQueueRepository, receipt_handle: str
+async def _extend_lease_periodically(
+    *,
+    job_queue: JobQueueRepository,
+    receipt_handle: str,
+    job_id: uuid.UUID,
+    locked_until: datetime,
 ) -> None:
     while True:
         await asyncio.sleep(settings.SQS.VISIBILITY_EXTENSION_INTERVAL_SECONDS)
         await job_queue.extend_visibility(receipt_handle=receipt_handle)
+
+        async with async_session() as session:
+            extended = await JobRepository(session=session).extend_lock(
+                job_id=job_id, locked_until=locked_until
+            )
+            await session.commit()
+
+        if extended is None or extended.locked_until is None:
+            logger.bind(job_id=str(job_id)).warning(
+                "Lost the DB lease while still processing — "
+                "another worker may have reclaimed this job"
+            )
+            return
+        locked_until = extended.locked_until
 
 
 def _compute_backoff(*, attempt_count: int) -> int:
@@ -60,9 +79,21 @@ async def process_message(
     receipt_handle = message["ReceiptHandle"]
     log = logger.bind(job_id=str(job_id))
 
+    async with async_session() as session:
+        job = await JobRepository(session=session).claim_for_processing(job_id=job_id)
+        await session.commit()
+
+    if job is None or job.locked_until is None:
+        log.info("Job not found or already claimed, skipping")
+        await job_queue.delete(receipt_handle=receipt_handle)
+        return
+
     heartbeat = asyncio.create_task(
-        _extend_visibility_periodically(
-            job_queue=job_queue, receipt_handle=receipt_handle
+        _extend_lease_periodically(
+            job_queue=job_queue,
+            receipt_handle=receipt_handle,
+            job_id=job_id,
+            locked_until=job.locked_until,
         )
     )
     try:
@@ -82,11 +113,13 @@ async def process_message(
                     kind=SpanKind.CONSUMER,
                 ) as span:
                     span.set_attribute("job.id", str(job_id))
-                    await render_service.render(job_id=job_id)
+                    await render_service.render(job=job)
             except Exception:
                 log.exception("Transient failure rendering job")
-                job = await job_repository.get_by_id(job_id=job_id)
-                attempt_count = job.attempt_count if job else 1
+                fresh = await job_repository.get_by_id(
+                    job_id=job_id, populate_existing=True
+                )
+                attempt_count = fresh.attempt_count if fresh else 1
                 backoff = _compute_backoff(attempt_count=attempt_count)
                 await job_queue.extend_visibility(
                     receipt_handle=receipt_handle, visibility_timeout=backoff

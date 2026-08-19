@@ -1,5 +1,5 @@
 import time
-import uuid
+from datetime import datetime
 from typing import Annotated
 
 from fastapi import Depends
@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.db import SessionDep
 from core.logging import logger
 from core.typst import TypstCompilationError, compile_typst
-from jobs.models.render_job import JobStatus
+from jobs.models.render_job import JobStatus, RenderJob
 from jobs.repositories.job import JobRepository, JobRepositoryDep
 from jobs.repositories.storage import JobStorageRepository, JobStorageRepositoryDep
 from jobs.services.job_transitions import transition
@@ -46,13 +46,15 @@ class RenderService:
         self.template_repository = template_repository
         self.template_storage = template_storage
 
-    async def render(self, *, job_id: uuid.UUID) -> None:
-        job = await self.job_repository.claim_for_processing(job_id=job_id)
-        if job is None:
-            logger.bind(job_id=str(job_id)).info(
-                "Job not found or already claimed, skipping"
-            )
-            return
+    async def render(self, *, job: RenderJob) -> None:
+        """Renders an already-claimed job. Every write below is fenced on
+        job.locked_until — if that lease has since been reclaimed by another
+        worker, the write is a no-op and this result is discarded rather
+        than overwriting whatever the new owner is doing.
+        """
+        if job.locked_until is None:
+            raise ValueError(f"Job {job.id} has no lease — was it claimed first?")
+        locked_until = job.locked_until
 
         start = time.perf_counter()
         try:
@@ -60,37 +62,88 @@ class RenderService:
                 template_id=job.template_id
             )
             if template is None:
-                job.error_message = f"Template {job.template_id} not found"
-                job.attempt_count += 1
-                transition(job=job, status=JobStatus.FAILED)
-                await self.session.commit()
-                self._record_outcome(status=JobStatus.FAILED, start=start)
+                await self._finalize(
+                    job=job,
+                    locked_until=locked_until,
+                    status=JobStatus.FAILED,
+                    start=start,
+                    error_message=f"Template {job.template_id} not found",
+                    attempt_count=job.attempt_count + 1,
+                )
                 return
 
             template_bytes = await self.template_storage.download(key=template.s3_key)
             pdf_bytes = await compile_typst(
                 template=template_bytes, input_data=job.input_data
             )
-            job.result_s3_key = await self.job_storage.upload_result(
+            result_s3_key = await self.job_storage.upload_result(
                 job_id=job.id, content=pdf_bytes
             )
-            transition(job=job, status=JobStatus.COMPLETED)
-            await self.session.commit()
-            self._record_outcome(status=JobStatus.COMPLETED, start=start)
+            await self._finalize(
+                job=job,
+                locked_until=locked_until,
+                status=JobStatus.COMPLETED,
+                start=start,
+                result_s3_key=result_s3_key,
+            )
         except TypstCompilationError as exc:
-            job.error_message = exc.stderr
-            job.attempt_count += 1
-            transition(job=job, status=JobStatus.FAILED)
-            await self.session.commit()
-            self._record_outcome(status=JobStatus.FAILED, start=start)
+            await self._finalize(
+                job=job,
+                locked_until=locked_until,
+                status=JobStatus.FAILED,
+                start=start,
+                error_message=exc.stderr,
+                attempt_count=job.attempt_count + 1,
+            )
         except Exception:
             # Unexpected/transient failure (S3 outage, DB hiccup, etc.) — revert
             # to PENDING so SQS redelivery + claim_for_processing can retry it,
             # instead of leaving the job stuck at PROCESSING forever.
-            job.attempt_count += 1
-            transition(job=job, status=JobStatus.PENDING)
-            await self.session.commit()
+            await self._finalize(
+                job=job,
+                locked_until=locked_until,
+                status=JobStatus.PENDING,
+                start=None,
+                attempt_count=job.attempt_count + 1,
+            )
             raise
+
+    async def _finalize(
+        self,
+        *,
+        job: RenderJob,
+        locked_until: datetime,
+        status: JobStatus,
+        start: float | None,
+        **fields,
+    ) -> None:
+        transition(job=job, status=status)  # validates the transition is legal
+
+        match status:
+            case JobStatus.COMPLETED:
+                updated = await self.job_repository.complete_if_owner(
+                    job_id=job.id, locked_until=locked_until, **fields
+                )
+            case JobStatus.FAILED:
+                updated = await self.job_repository.fail_if_owner(
+                    job_id=job.id, locked_until=locked_until, **fields
+                )
+            case JobStatus.PENDING:
+                updated = await self.job_repository.revert_to_pending_if_owner(
+                    job_id=job.id, locked_until=locked_until, **fields
+                )
+            case _:
+                raise ValueError(f"No fenced writer for status {status}")
+
+        await self.session.commit()
+
+        if updated is None:
+            logger.bind(job_id=str(job.id)).warning(
+                "Lease was reclaimed by another worker before this result "
+                "could be saved — discarding"
+            )
+        elif start is not None:
+            self._record_outcome(status=status, start=start)
 
     @staticmethod
     def _record_outcome(*, status: JobStatus, start: float) -> None:
