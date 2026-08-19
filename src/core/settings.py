@@ -16,6 +16,10 @@ class DBSettings(BaseModel):
     def url(self) -> str:
         return f"postgresql+asyncpg://{self.USER}:{self.PASS}@{self.HOST}:{self.PORT}/{self.NAME}"
 
+    @property
+    def test_url(self) -> str:
+        return f"postgresql+asyncpg://{self.USER}:{self.PASS}@{self.HOST}:{self.PORT}/testing_{self.NAME}"
+
 
 class S3StorageSettings(BaseModel):
     ENDPOINT_URL: str
