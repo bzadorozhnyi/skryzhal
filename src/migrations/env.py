@@ -1,5 +1,4 @@
 import asyncio
-import os
 from logging.config import fileConfig
 
 from alembic import context
@@ -9,13 +8,15 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 
 import core.models_registry  # noqa: F401
 from core.db import BaseModel
-from core.settings import settings
+from core.db_url import resolve_db_url
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
-db_url = settings.DB.test_url if os.environ.get("TESTING") else settings.DB.url
-config.set_main_option("sqlalchemy.url", db_url)
+# Reads DB__* straight from os.environ (see core/db_url.py) rather than
+# core.settings.settings — migrations can run standalone, via a plain
+# `alembic upgrade head`, before any app code has constructed that.
+config.set_main_option("sqlalchemy.url", resolve_db_url())
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.

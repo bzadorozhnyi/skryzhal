@@ -4,6 +4,8 @@ from typing import Self
 from pydantic import BaseModel, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from core.db_url import build_db_url
+
 
 class DBSettings(BaseModel):
     NAME: str
@@ -14,11 +16,13 @@ class DBSettings(BaseModel):
 
     @property
     def url(self) -> str:
-        return f"postgresql+asyncpg://{self.USER}:{self.PASS}@{self.HOST}:{self.PORT}/{self.NAME}"
-
-    @property
-    def test_url(self) -> str:
-        return f"postgresql+asyncpg://{self.USER}:{self.PASS}@{self.HOST}:{self.PORT}/testing_{self.NAME}"
+        return build_db_url(
+            user=self.USER,
+            password=self.PASS,
+            host=self.HOST,
+            port=self.PORT,
+            name=self.NAME,
+        )
 
 
 class S3StorageSettings(BaseModel):
@@ -103,12 +107,13 @@ class Settings(BaseSettings):
     OUTBOX: OutboxSettings = OutboxSettings()
     LOGGING: LoggingSettings = LoggingSettings()
     TRACING: TracingSettings
+    METRICS_PORT: int = 9100
 
-    model_config = SettingsConfigDict(
-        env_file=(".env", "../.env"),
-        env_file_encoding="utf-8",
-        env_nested_delimiter="__",
-    )
+    # No env_file: this reads only os.environ. Something else is
+    # responsible for getting the right values in there first — docker
+    # compose sets them directly on each service, tests/conftest.py loads
+    # .env.test before anything else is imported.
+    model_config = SettingsConfigDict(env_nested_delimiter="__")
 
 
 settings = Settings()

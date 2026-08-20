@@ -29,7 +29,6 @@ WORKER_HEARTBEAT = Gauge(
     "worker_last_successful_poll_timestamp",
     "Unix timestamp of the last completed main-loop iteration",
 )
-METRICS_PORT = 9100
 
 
 async def _extend_lease_periodically(
@@ -138,7 +137,7 @@ async def process_message(
 
 
 async def main() -> None:
-    start_http_server(METRICS_PORT)
+    start_http_server(settings.METRICS_PORT)
     async with s3_client_context() as s3_client, sqs_client_context() as sqs_client:
         job_queue = JobQueueRepository(sqs_client=sqs_client)
         logger.info("Worker started, polling SQS...")
