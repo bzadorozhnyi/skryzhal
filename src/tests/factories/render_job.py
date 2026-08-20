@@ -24,5 +24,6 @@ def render_job_factory(db_session, template_factory):
         input_data = factory.LazyFunction(dict)
         status = JobStatus.PENDING
         attempt_count = 0
+        locked_until = None
 
     return AsyncFactory(factory_class=RenderJobFactory, session=db_session)
