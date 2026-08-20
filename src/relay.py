@@ -24,7 +24,6 @@ RELAY_HEARTBEAT = Gauge(
 OUTBOX_UNPUBLISHED = Gauge(
     "outbox_unpublished_count", "Number of outbox events not yet published"
 )
-METRICS_PORT = 9100
 
 
 async def relay_once(*, job_queue: JobQueueRepository) -> int:
@@ -82,7 +81,7 @@ async def relay_once(*, job_queue: JobQueueRepository) -> int:
 
 
 async def main() -> None:
-    start_http_server(METRICS_PORT)
+    start_http_server(settings.METRICS_PORT)
     async with sqs_client_context() as sqs_client:
         job_queue = JobQueueRepository(sqs_client=sqs_client)
         logger.info("Relay started, polling outbox...")

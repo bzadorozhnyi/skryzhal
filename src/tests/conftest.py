@@ -1,5 +1,4 @@
 import asyncio
-import os
 import pkgutil
 from pathlib import Path
 
@@ -9,26 +8,20 @@ from alembic.config import Config
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from core.db import get_session
-from core.settings import settings
-from jobs.repositories.queue import JobQueueRepository
-from main import app
-from tests.helpers.db import create_db, drop_db, is_db_exist
-
 ALEMBIC_INI_PATH = Path(__file__).resolve().parent.parent / "alembic.ini"
-os.environ["TESTING"] = "1"
 
-# The "test-*" bucket/queue/DLQ these point at are provisioned by
-# localstack-init-testing/ (mirrors localstack-init/, mounted alongside it —
-# see docker-compose.yml), so this suite never competes for SQS messages
-# with a live docker-compose worker/relay consuming the real queue.
-# Application code (worker.py, job_queue.py, template storage) reads these
-# fields straight off the settings singleton with no test-awareness of its
-# own, so mutating them once here — before anything constructs a client or
-# reads a queue/bucket name — is what makes the redirection invisible to it.
-settings.S3_STORAGE.BUCKET = f"test-{settings.S3_STORAGE.BUCKET}"
-settings.SQS.QUEUE_NAME = f"test-{settings.SQS.QUEUE_NAME}"
-settings.SQS.DLQ_NAME = f"test-{settings.SQS.DLQ_NAME}"
+# Must run before any project-internal import below — core.settings and
+# core.db_url both read straight off os.environ, so whatever they see has
+# to already be correct by the time they're first imported.
+from tests.helpers.env import load_dotenv_into_environ  # noqa: E402
+
+load_dotenv_into_environ(".env.test", "../.env.test")
+
+from core.db import get_session  # noqa: E402
+from core.db_url import resolve_db_url  # noqa: E402
+from jobs.repositories.queue import JobQueueRepository  # noqa: E402
+from main import app  # noqa: E402
+from tests.helpers.db import create_db, drop_db, is_db_exist  # noqa: E402
 
 
 @pytest.fixture(scope="session")
@@ -43,18 +36,19 @@ def alembic_config():
 
 @pytest.fixture(scope="session")
 async def async_engine(alembic_config):
-    if await is_db_exist(db_url=settings.DB.test_url):
-        await drop_db(db_url=settings.DB.test_url)
-    await create_db(db_url=settings.DB.test_url)
+    db_url = resolve_db_url()
+    if await is_db_exist(db_url=db_url):
+        await drop_db(db_url=db_url)
+    await create_db(db_url=db_url)
 
     await asyncio.to_thread(command.upgrade, alembic_config, "head")
 
-    engine = create_async_engine(settings.DB.test_url, echo=True, future=True)
+    engine = create_async_engine(db_url, echo=True, future=True)
 
     yield engine
 
     await engine.dispose()
-    await drop_db(db_url=settings.DB.test_url)
+    await drop_db(db_url=db_url)
 
 
 @pytest.fixture(scope="session")

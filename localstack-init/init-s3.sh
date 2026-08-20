@@ -36,3 +36,8 @@ create_bucket local-bucket
 # Same bucket configuration, dedicated name — so the test suite never
 # touches (or races with) the bucket the live api/worker/relay use.
 create_bucket test-local-bucket
+
+# E2E spawns real worker.py/relay.py subprocesses — a dedicated bucket
+# keeps them from racing with the fast in-process test suite above when
+# both run at once.
+create_bucket test-e2e-local-bucket
